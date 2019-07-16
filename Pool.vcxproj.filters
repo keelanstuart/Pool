@@ -12,10 +12,6 @@
     <Filter Include="Header Files\private">
       <UniqueIdentifier>{C9C00EB1-3D59-44FD-8D5E-4528C70A946A}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{A9827166-B046-470D-919A-83204548E59D}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\stdafx.cpp">
