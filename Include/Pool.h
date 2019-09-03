@@ -36,7 +36,7 @@ public:
 	// param0 and param1 are user-supplied values
 	// task_number is, for tasks started by RunTask where numtimes > 1, correspondent to the number of times
 	// the task has previously been run in this go.
-	typedef void (WINAPI *TASK_CALLBACK)(LPVOID param0, LPVOID param1, size_t task_number);
+	typedef void (__cdecl *TASK_CALLBACK)(LPVOID param0, LPVOID param1, size_t task_number);
 
 	// Deletes the underlying thread pool and frees any resources associated with it
 	virtual void Release() = NULL;
