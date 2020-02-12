@@ -54,6 +54,9 @@ public:
 	// Removes any tasks not already running from the queue
 	virtual void PurgeAllPendingTasks() = NULL;
 
+	// Executes all tasks immediately on the calling thread, ideal for task queues as opposed to thread pools (use this mode with 0 threads)
+	virtual void Flush() = NULL;
+
 	// Creates a pool with the number of threads based on the cores in the machine, given by:
 	//   threads_per_core * max(1, (core_count + core_count_adjustment))
 	POOL_API static IThreadPool *Create(UINT threads_per_core, INT core_count_adjustment);

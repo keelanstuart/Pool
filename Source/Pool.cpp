@@ -122,6 +122,30 @@ protected:
 	HANDLE m_hSemaphores[TS_NUMSEMAPHORES];
 
 public:
+
+	void Initialize(size_t thread_count)
+	{
+		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
+
+		InitializeCriticalSection(&m_csTaskList);
+
+		if (thread_count)
+		{
+			m_hThreads.resize(thread_count);
+
+			// this is the quit semaphore...
+			m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
+
+			// this is the run semaphore...
+			m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
+
+			for (size_t i = 0; i < m_hThreads.size(); i++)
+			{
+				m_hThreads[i] = std::thread(_WorkerThreadProc, this);
+			}
+		}
+	}
+
 	CThreadPool(UINT threads_per_core, INT core_count_adjustment)
 	{
 		// Find out how many cores the system has
@@ -129,54 +153,32 @@ public:
 		GetSystemInfo(&sysinfo);
 
 		// Calculate the number of threads we need and allocate thread handles
-		m_hThreads.resize(threads_per_core * max(1, (sysinfo.dwNumberOfProcessors + core_count_adjustment)));
-
-		InitializeCriticalSection(&m_csTaskList);
-
-		// this is the quit semaphore...
-		m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-
-		// this is the run semaphore...
-		m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-
-		for (size_t i = 0; i < m_hThreads.size(); i++)
-		{
-			m_hThreads[i] = std::thread(_WorkerThreadProc, this);
-		}
+		Initialize(threads_per_core * max(1, (sysinfo.dwNumberOfProcessors + core_count_adjustment)));
 	}
 
 	CThreadPool(size_t thread_count)
 	{
-		// Calculate the number of threads we need and allocate thread handles
-		m_hThreads.resize(thread_count);
-
-		InitializeCriticalSection(&m_csTaskList);
-
-		// this is the quit semaphore...
-		m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-
-		// this is the run semaphore...
-		m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-
-		for (size_t i = 0; i < m_hThreads.size(); i++)
-		{
-			m_hThreads[i] = std::thread(_WorkerThreadProc, this);
-		}
+		Initialize(thread_count);
 	}
 
 	virtual ~CThreadPool()
 	{
-		PurgeAllPendingTasks();
-
-		ReleaseSemaphore(m_hSemaphores[TS_QUIT], (LONG)m_hThreads.size(), NULL);
-
-		for (size_t i = 0; i < m_hThreads.size(); i++)
+		if (m_hThreads.size())
 		{
-			m_hThreads[i].join();
+			PurgeAllPendingTasks();
+
+			ReleaseSemaphore(m_hSemaphores[TS_QUIT], (LONG)m_hThreads.size(), NULL);
+
+			for (size_t i = 0; i < m_hThreads.size(); i++)
+			{
+				m_hThreads[i].join();
+			}
+
+			CloseHandle(m_hSemaphores[TS_QUIT]);
+			CloseHandle(m_hSemaphores[TS_RUN]);
 		}
 
-		CloseHandle(m_hSemaphores[TS_QUIT]);
-		CloseHandle(m_hSemaphores[TS_RUN]);
+		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
 
 		DeleteCriticalSection(&m_csTaskList);
 	}
@@ -205,9 +207,10 @@ public:
 
 		LeaveCriticalSection(&m_csTaskList);
 
-		ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
+		if (m_hSemaphores[TS_RUN])
+			ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
 
-		if (block)
+		if (m_hThreads.size() && block)
 		{
 			while (blockwait)
 			{
@@ -220,9 +223,16 @@ public:
 
 	virtual void WaitForAllTasks(DWORD milliseconds)
 	{
-		while (!m_TaskList.empty())
+		if (m_hThreads.size())
 		{
-			Sleep(1);
+			while (!m_TaskList.empty())
+			{
+				Sleep(1);
+			}
+		}
+		else
+		{
+			Flush();
 		}
 	}
 
@@ -230,6 +240,26 @@ public:
 	{
 		EnterCriticalSection(&m_csTaskList);
 
+		m_TaskList.clear();
+
+		LeaveCriticalSection(&m_csTaskList);
+	}
+
+	virtual void Flush()
+	{
+		EnterCriticalSection(&m_csTaskList);
+
+		for (TTaskList::const_iterator it = m_TaskList.cbegin(), last_it = m_TaskList.cend(); it != last_it; it++)
+		{
+			const STaskInfo *task = &(*it);
+
+			task->m_Task(task->m_Param[0], task->m_Param[1], task->m_TaskNumber);
+
+			if (task->m_pActionRef)
+			{
+				(*(task->m_pActionRef))--;
+			}
+		}
 		m_TaskList.clear();
 
 		LeaveCriticalSection(&m_csTaskList);
