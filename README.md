@@ -2,10 +2,10 @@
 Pool, a thread-pooled asynchronous job library with an easy-to-use API
 
 
+*************************************************
 # Pseudocode examples
 
-*************************************************
-
+```
 // A simple, but realistic sample: pseudocode that does something to a fictional image, in chunks.
 // Verbosity for explanation's sake.
 // Image is a hypothetical class that wraps RGB image data. Use your imagination.
@@ -78,6 +78,8 @@ int main()
   // Release our thread pool
   ppool->Release();
 }
+
+```
 
 *************************************************
 
