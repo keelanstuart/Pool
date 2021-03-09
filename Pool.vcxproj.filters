@@ -9,14 +9,8 @@
       <UniqueIdentifier>{8FFE1549-6A65-4D9F-B62E-34F58FA3D288}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
     </Filter>
-    <Filter Include="Header Files\private">
-      <UniqueIdentifier>{C9C00EB1-3D59-44FD-8D5E-4528C70A946A}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Source\stdafx.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Pool.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -24,9 +18,6 @@
   <ItemGroup>
     <ClInclude Include="Include\Pool.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\stdafx.h">
-      <Filter>Header Files\private</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

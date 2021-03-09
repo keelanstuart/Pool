@@ -1,21 +1,59 @@
 /*
+
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2019, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2021, Keelan Stuart. All rights reserved.
 
-	Pool is free software; you can redistribute it and/or modify it under
-	the terms of the GNU Lesser General Public License as published by
-	the Free Software Foundation; either version 3 of the License, or
-	(at your option) any later version.
+	MIT License
 
-	Pool is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU Lesser General Public License for more details.
-	See <http://www.gnu.org/licenses/>.
+	Permission is hereby granted, free of charge, to any person
+	obtaining a copy of this software and associated documentation
+	files (the "Software"), to deal in the Software without restriction,
+	including without limitation the rights to use, copy, modify, merge,
+	publish, distribute, sublicense, and/or sell copies of the Software,
+	and to permit persons to whom the Software is furnished to do so,
+	subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be
+	included in all copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+	EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 */
 
-#include "stdafx.h"
+#if defined(_DEBUG)
+#define _CRTDBG_MAP_ALLOC
+#include <stdlib.h>
+#include <crtdbg.h>
+#endif
+
+#if defined(_MSC_BUILD)
+
+#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+
+#include <windows.h>
+#include <synchapi.h>
+#define sem_t HANDLE
+
+#elif defined(LINUX)
+
+#include <semaphore.h>
+
+#endif
+
+#include <malloc.h>
+#include <memory.h>
+#include <deque>
+#include <vector>
+#include <algorithm>
+#include <thread>
+
 
 #include <Pool.h>
 #include <thread>
@@ -29,7 +67,7 @@ protected:
 
 	struct STaskInfo
 	{
-		STaskInfo(TASK_CALLBACK task, LPVOID param0, LPVOID param1, size_t task_number, size_t *pactionref) :
+		STaskInfo(TASK_CALLBACK task, void *param0, void *param1, size_t task_number, size_t *pactionref) :
 			m_Task(task),
 			m_pActionRef(pactionref)
 		{
@@ -47,7 +85,7 @@ protected:
 		TASK_CALLBACK m_Task;
 
 		// The parameter given to the thread function
-		LPVOID m_Param[2];
+		void *m_Param[2];
 		size_t m_TaskNumber;
 
 		// This is the number of active tasks, used for blocking
@@ -119,7 +157,7 @@ protected:
 		TS_NUMSEMAPHORES
 	};
 
-	HANDLE m_hSemaphores[TS_NUMSEMAPHORES];
+	sem_t m_hSemaphores[TS_NUMSEMAPHORES];
 
 public:
 
@@ -133,11 +171,14 @@ public:
 		{
 			m_hThreads.resize(thread_count);
 
-			// this is the quit semaphore...
+			// create the run and quit semaphore...
+#if defined(_MSC_BUILD)
 			m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-
-			// this is the run semaphore...
 			m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
+#elif defined(LINUX)
+			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
+			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
+#endif
 
 			for (size_t i = 0; i < m_hThreads.size(); i++)
 			{
@@ -146,14 +187,14 @@ public:
 		}
 	}
 
-	CThreadPool(UINT threads_per_core, INT core_count_adjustment)
+	CThreadPool(size_t threads_per_core, int core_count_adjustment)
 	{
 		// Find out how many cores the system has
 		SYSTEM_INFO sysinfo;
 		GetSystemInfo(&sysinfo);
 
 		// Calculate the number of threads we need and allocate thread handles
-		Initialize(threads_per_core * max(1, (sysinfo.dwNumberOfProcessors + core_count_adjustment)));
+		Initialize(threads_per_core * (size_t)std::max<int>(1, (sysinfo.dwNumberOfProcessors + core_count_adjustment)));
 	}
 
 	CThreadPool(size_t thread_count)
@@ -167,15 +208,23 @@ public:
 		{
 			PurgeAllPendingTasks();
 
+#if defined(_MSC_BUILD)
 			ReleaseSemaphore(m_hSemaphores[TS_QUIT], (LONG)m_hThreads.size(), NULL);
+#elif defined(LINUX)
+#endif
 
 			for (size_t i = 0; i < m_hThreads.size(); i++)
 			{
 				m_hThreads[i].join();
 			}
 
+#if defined(_MSC_BUILD)
 			CloseHandle(m_hSemaphores[TS_QUIT]);
 			CloseHandle(m_hSemaphores[TS_RUN]);
+#elif defined(LINUX)
+			sem_destroy(&m_hSemaphores[TS_QUIT]);
+			sem_destroy(&m_hSemaphores[TS_RUN]);
+#endif
 		}
 
 		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
@@ -194,7 +243,7 @@ public:
 		return (UINT)m_hThreads.size();
 	}
 
-	virtual bool RunTask(TASK_CALLBACK func, LPVOID param0 = nullptr, LPVOID param1 = nullptr, size_t numtimes = 1, bool block = false)
+	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false)
 	{
 		size_t blockwait = 0;
 
@@ -221,7 +270,7 @@ public:
 		return true;
 	}
 
-	virtual void WaitForAllTasks(DWORD milliseconds)
+	virtual void WaitForAllTasks(uint32_t milliseconds)
 	{
 		if (m_hThreads.size())
 		{
@@ -268,7 +317,7 @@ public:
 
 // Creates a pool with the number of threads based on the cores in the machine, given by:
 //   threads_per_core * max(1, (core_count + core_count_adjustment))
-IThreadPool *IThreadPool::Create(UINT threads_per_core, INT core_count_adjustment)
+IThreadPool *IThreadPool::Create(size_t threads_per_core, int core_count_adjustment)
 {
 	return new CThreadPool(threads_per_core, core_count_adjustment);
 }
