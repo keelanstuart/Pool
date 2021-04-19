@@ -48,10 +48,19 @@ namespace pool
 class IThreadPool
 {
 public:
+
+	typedef enum
+	{
+		TR_OK = 0,		// the task is done, no special behavior
+
+		TR_RERUN,		// the task should be re-run immediately
+		TR_REQUEUE,		// the task should be re-queued
+	} TASK_RETURN;
+
 	// param0 and param1 are user-supplied values
 	// task_number is, for tasks started by RunTask where numtimes > 1, correspondent to the number of times
 	// the task has previously been run in this go.
-	typedef void (__cdecl *TASK_CALLBACK)(void *param0, void *param1, size_t task_number);
+	typedef TASK_RETURN (__cdecl *TASK_CALLBACK)(void *param0, void *param1, size_t task_number);
 
 	// Deletes the underlying thread pool and frees any resources associated with it
 	virtual void Release() = NULL;

@@ -127,9 +127,22 @@ protected:
 			STaskInfo task(nullptr, nullptr, nullptr, 0, nullptr);
 			while (GetNextTask(task))
 			{
-				task.m_Task(task.m_Param[0], task.m_Param[1], task.m_TaskNumber);
+				TASK_RETURN ret;
+				do
+				{
+					ret = task.m_Task(task.m_Param[0], task.m_Param[1], task.m_TaskNumber);
+				}
+				while (ret == TASK_RETURN::TR_RERUN);
 
-				if (task.m_pActionRef)
+				if (ret == TASK_RETURN::TR_REQUEUE)
+				{
+					EnterCriticalSection(&m_csTaskList);
+
+					m_TaskList.push_back(task);
+
+					LeaveCriticalSection(&m_csTaskList);
+				}
+				else if (task.m_pActionRef)
 				{
 					(*(task.m_pActionRef))--;
 				}
