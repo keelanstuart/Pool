@@ -124,8 +124,12 @@ protected:
 			if (waitret == TS_QUIT)
 				break;
 
+			EnterCriticalSection(&m_csTaskList);
+			size_t initial_task_count = m_TaskList.size();
+			LeaveCriticalSection(&m_csTaskList);
+
 			STaskInfo task(nullptr, nullptr, nullptr, 0, nullptr);
-			while (GetNextTask(task))
+			while (initial_task_count && GetNextTask(task))
 			{
 				TASK_RETURN ret;
 				do
@@ -141,11 +145,16 @@ protected:
 					m_TaskList.push_back(task);
 
 					LeaveCriticalSection(&m_csTaskList);
+
+					if (m_hSemaphores[TS_RUN])
+						ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
 				}
 				else if (task.m_pActionRef)
 				{
 					(*(task.m_pActionRef))--;
 				}
+
+				initial_task_count--;
 
 				Sleep(0);
 			}
