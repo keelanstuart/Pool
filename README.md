@@ -4,7 +4,7 @@ Pool, a thread-pooled asynchronous job library with an easy-to-use API
 
 ****
 
-####Get Started: Create a Thread Pool
+#### Get Started: Create a Thread Pool
 
 ```C++
 // Instantiates a pool and gives you an IThreadPool interface
@@ -27,7 +27,7 @@ IThreadPool *pGraphicsTasks = pool::IThreadPool::Create(0);
 
 ****
 
-####A Simple Example: Asynchronous Processing
+#### A Simple Example: Asynchronous Processing
 
 First, write your task callback(s)...
 ```C++
@@ -70,7 +70,7 @@ ppool1->PurgeAllPendingTasks();
 
 ****
 
-####Wrapping Up
+#### Wrapping Up
 
 ```C++
 ppool1->Release();
