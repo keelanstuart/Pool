@@ -1,5 +1,6 @@
 # Pool
-Pool, a thread-pooled asynchronous job library with an easy-to-use API
+A thread-pooled, asynchronous job library with an easy-to-use API
+
 
 
 ****
@@ -23,6 +24,7 @@ IThreadPool *ppool3 = pool::IThreadPool::Create(3);
 // asynchronously but then upload to GPU memory in the main render thread.
 IThreadPool *pGraphicsTasks = pool::IThreadPool::Create(0);
 ```
+
 
 
 ****
@@ -57,15 +59,38 @@ for (int i = 0; i < 10; i++)
   ppool1->RunTask(SimpleTask2);
 ```
 
+If your program's termination condition is variable and tasks may be left unfinished (and you don't want them to go on if it's time to quit), you can flush the task queue prior to waiting.
+```C++
+ppool1->PurgeAllPendingTasks();
+```
+
 Your tasks will now run, but will finish whenever they do - but, you can wait for them.
 ```C++
 ppool1->WaitForAllTasks(INFINITE);
 ```
 
-If your program's termination condition is variable and tasks may be left unfinished (and you don't want them to finish if it's time to quit), you can flush the task queue prior to waiting.
+
+
+****
+
+#### Another Simple Example: Multithreaded Optimization
+
 ```C++
-ppool1->PurgeAllPendingTasks();
+pool::IThreadPool::TASK_RETURN __cdecl MyTask(void *param0, void *param1, size_t task_number)
+{
+  // print the task number, but don't really do anything with it
+  char s[16];
+  sprintf(s, "%d", (int)task_number);
+
+  return pool::IThreadPool::TASK_RETURN::TR_OK;
+}
 ```
+
+Run a single task many times and wait on the result...
+```C++
+ppool1->RunTask(MyTask, nullptr, nullptr, 1000, true);
+```
+
 
 
 ****
