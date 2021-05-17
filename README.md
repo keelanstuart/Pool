@@ -1,88 +1,102 @@
 # Pool
-Pool, a thread-pooled asynchronous job library with an easy-to-use API
+A thread-pooled, asynchronous job library with an easy-to-use API
 
 
-*************************************************
-# Pseudocode examples
 
-```
-// A simple, but realistic sample: pseudocode that does something to a fictional image, in chunks.
-// Verbosity for explanation's sake.
-// Image is a hypothetical class that wraps RGB image data. Use your imagination.
+****
 
-#include <pool.h>
+#### Get Started: Create a Thread Pool
 
-#define HORZ_CHUNKS   8
-#define VERT_CHUNKS   8
+```C++
+// Instantiates a pool and gives you an IThreadPool interface
+// In this case, we spin up 2 threads per CPU core
+IThreadPool *ppool1 = pool::IThreadPool::Create(2, 0);
 
-void __cdecl ProcessChunk(Image *input_image, LPVOID dummy, size_t chunk_number)
-{
-  // compute which chunk we're looking at in the 8x8 grid
-  int vertical_chunk = chunk_number / VERT_CHUNKS;
-  int horizontal_chunk = chunk_number % HORZ_CHUNKS;
+// In this case, we spin up 1 thread per CPU core, but reduce the core count
+// used to compute the thread count by 3
+IThreadPool *ppool2 = pool::IThreadPool::Create(1, -3);
 
-  // how big are the chunks?
-  int chunk_width = input_image->Width() / HORZ_CHUNKS;
-  int chunk_height = input_image->Height() / VERT_CHUNKS;
+// In this case, we spin up 3 threads total
+IThreadPool *ppool3 = pool::IThreadPool::Create(3);
 
-  // get the bounds for x
-  int start_x = chunk_width * horizontal_chunk;
-  int end_x = (chunk_width + 1) * horizontal_chunk;
-
-  // get the bounds for y
-  int start_y = chunk_height * vertical_chunk;
-  int end_y = (chunk_height + 1) * vertical_chunk;
-
-  struct Pixel
-  {
-    BYTE r, g, b;
-  } *pix;
-
-  // Offset from the image data to the corner of our chunk
-  pix = (Pixel *)input_image->Data() + (start_y * input_image->Width());
-
-  for (int y = start_y; y < end_y; y++)
-  {
-    for (int x = start_x; x < end_x; x++)
-    {
-      // invert color components
-      pix[x].r = 255 - pix[x].r;
-      pix[x].g = 255 - pix[x].g;
-      pix[x].b = 255 - pix[x].b;
-    }
-
-    // add the stride to get the next line
-    pix += input_image->Width();
-  }
-}
-
-int main()
-{
-  // Creates a thread pool that has 2 threads per CPU core
-  // If you were using a machine that had no hyperthreading but multiple cores, you might use only 1 thread/core
-  IThreadPool *ppool = pool::IThreadPool::Create(2, 0);
-	
-  if (!ppool)
-    return -1;
-
-  // Load an image here
-  Image *input_image = Image::Load("image1.png");
-
-  // Run ProcessChunk for each image chunk and block here until all tasks are complete
-  // ProcessChunk assumes an RGB image that is evenly divisible by 8 in both dimensions
-  ppool->RunTask(ProcessChunk, (LPVOID)input_image, nullptr, VERT_CHUNKS * HORZ_CHUNKS, true);
-
-  // Save the image back to disk
-  input_image->Save("image2.png");
-
-  // Release our thread pool
-  ppool->Release();
-}
-
+// You can also create a "pool" with 0 threads, add tasks from multiple threads, then execute them all on a single thread later
+// by calling Flush. This is useful for graphics tasks, for example, where you may want to load texture or geometry data
+// asynchronously but then upload to GPU memory in the main render thread.
+IThreadPool *pGraphicsTasks = pool::IThreadPool::Create(0);
 ```
 
-*************************************************
 
-You can also create a "pool" with 0 threads, add tasks from multiple threads, then execute them all on a single thread later
-by calling Flush. This is useful for graphics tasks, for example, where you may want to load texture or geometry data
-asynchronously but then upload to GPU memory in the main render thread.
+
+****
+
+#### A Simple Example: Asynchronous Processing
+
+First, write your task callback(s)...
+```C++
+pool::IThreadPool::TASK_RETURN __cdecl SimpleTask1(void *param0, void *param1, size_t task_number)
+{
+  // do a thing - like Sleep(10)
+  Sleep(10);
+
+  return pool::IThreadPool::TASK_RETURN::TR_OK;
+}
+
+pool::IThreadPool::TASK_RETURN __cdecl SimpleTask2(void *param0, void *param1, size_t task_number)
+{
+  // do a different thing - like Sleep(50)
+  Sleep(50);
+
+  return pool::IThreadPool::TASK_RETURN::TR_OK;
+}
+```
+
+Then, somewhere in your code, run some tasks...
+```C++
+for (int i = 0; i < 100; i++)
+  ppool1->RunTask(SimpleTask1);
+
+for (int i = 0; i < 10; i++)
+  ppool1->RunTask(SimpleTask2);
+```
+
+If your program's termination condition is variable and tasks may be left unfinished (and you don't want them to go on if it's time to quit), you can flush the task queue prior to waiting.
+```C++
+ppool1->PurgeAllPendingTasks();
+```
+
+Your tasks will now run, but will finish whenever they do - but, you can wait for them.
+```C++
+ppool1->WaitForAllTasks(INFINITE);
+```
+
+
+
+****
+
+#### Another Simple Example: Multithreaded Optimization
+
+```C++
+pool::IThreadPool::TASK_RETURN __cdecl MyTask(void *param0, void *param1, size_t task_number)
+{
+  // print the task number, but don't really do anything with it
+  char s[16];
+  sprintf(s, "%d", (int)task_number);
+
+  return pool::IThreadPool::TASK_RETURN::TR_OK;
+}
+```
+
+Run a single task many times and wait on the result...
+```C++
+ppool1->RunTask(MyTask, nullptr, nullptr, 1000, true);
+```
+
+
+
+****
+
+#### Wrapping Up
+
+```C++
+ppool1->Release();
+```
