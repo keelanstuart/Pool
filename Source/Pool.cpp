@@ -2,7 +2,7 @@
 
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2021, Keelan Stuart. All rights reserved.
+	Copyright Â© 2009-2021, Keelan Stuart. All rights reserved.
 
 	MIT License
 
@@ -53,10 +53,9 @@
 #include <vector>
 #include <algorithm>
 #include <thread>
-
+#include <mutex>
 
 #include <Pool.h>
-#include <thread>
 
 using namespace pool;
 
@@ -96,13 +95,13 @@ protected:
 
 	TTaskList m_TaskList;
 
-	CRITICAL_SECTION m_csTaskList;
+	std::mutex m_mutexTaskList;
 
 	bool GetNextTask(STaskInfo &task)
 	{
 		bool ret = false;
 
-		EnterCriticalSection(&m_csTaskList);
+		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
 		if (!m_TaskList.empty())
 		{
@@ -110,8 +109,6 @@ protected:
 			m_TaskList.pop_front();
 			ret = true;
 		}
-
-		LeaveCriticalSection(&m_csTaskList);
 
 		return ret;
 	}
@@ -124,9 +121,11 @@ protected:
 			if (waitret == TS_QUIT)
 				break;
 
-			EnterCriticalSection(&m_csTaskList);
+			m_mutexTaskList.lock();
+
 			size_t initial_task_count = m_TaskList.size();
-			LeaveCriticalSection(&m_csTaskList);
+
+			m_mutexTaskList.unlock();
 
 			STaskInfo task(nullptr, nullptr, nullptr, 0, nullptr);
 			while (initial_task_count && GetNextTask(task))
@@ -140,11 +139,11 @@ protected:
 
 				if (ret == TASK_RETURN::TR_REQUEUE)
 				{
-					EnterCriticalSection(&m_csTaskList);
+					m_mutexTaskList.lock();
 
 					m_TaskList.push_back(task);
 
-					LeaveCriticalSection(&m_csTaskList);
+					m_mutexTaskList.unlock();
 
 					if (m_hSemaphores[TS_RUN])
 						ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
@@ -186,8 +185,6 @@ public:
 	void Initialize(size_t thread_count)
 	{
 		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
-
-		InitializeCriticalSection(&m_csTaskList);
 
 		if (thread_count)
 		{
@@ -250,8 +247,6 @@ public:
 		}
 
 		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
-
-		DeleteCriticalSection(&m_csTaskList);
 	}
 
 	virtual void Release()
@@ -269,14 +264,14 @@ public:
 	{
 		size_t blockwait = 0;
 
-		EnterCriticalSection(&m_csTaskList);
-
-		for (size_t i = 0; i < numtimes; i++)
 		{
-			m_TaskList.push_back(STaskInfo(func, param0, param1, i, block ? &blockwait : NULL));
-		}
+			std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		LeaveCriticalSection(&m_csTaskList);
+			for (size_t i = 0; i < numtimes; i++)
+			{
+				m_TaskList.push_back(STaskInfo(func, param0, param1, i, block ? &blockwait : NULL));
+			}
+		}
 
 		if (m_hSemaphores[TS_RUN])
 			ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
@@ -309,31 +304,24 @@ public:
 
 	virtual void PurgeAllPendingTasks()
 	{
-		EnterCriticalSection(&m_csTaskList);
+		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
 		m_TaskList.clear();
-
-		LeaveCriticalSection(&m_csTaskList);
 	}
 
 	virtual void Flush()
 	{
-		EnterCriticalSection(&m_csTaskList);
+		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		for (TTaskList::const_iterator it = m_TaskList.cbegin(), last_it = m_TaskList.cend(); it != last_it; it++)
+		for (auto &it : m_TaskList)
 		{
-			const STaskInfo *task = &(*it);
+			it.m_Task(it.m_Param[0], it.m_Param[1], it.m_TaskNumber);
 
-			task->m_Task(task->m_Param[0], task->m_Param[1], task->m_TaskNumber);
-
-			if (task->m_pActionRef)
-			{
-				(*(task->m_pActionRef))--;
-			}
+			if (it.m_pActionRef)
+				it.m_pActionRef--;
 		}
-		m_TaskList.clear();
 
-		LeaveCriticalSection(&m_csTaskList);
+		m_TaskList.clear();
 	}
 };
 
