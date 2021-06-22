@@ -80,6 +80,7 @@ public:
 	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false) = NULL;
 
 	// Waits for all active tasks to complete, until milliseconds expires... or INFINITE to wait forever
+	// NOTE: new task submission is still allowed during this function, so refrain from running new tasks to return
 	virtual void WaitForAllTasks(uint32_t milliseconds) = NULL;
 
 	// Removes any tasks not already running from the queue
@@ -89,10 +90,13 @@ public:
 	virtual void Flush() = NULL;
 
 	// Creates a pool with the number of threads based on the cores in the machine, given by:
-	//   threads_per_core * max(1, (core_count + core_count_adjustment))
+	//    threads_per_core * max(1, (core_count + core_count_adjustment))
 	POOL_API static IThreadPool *Create(size_t threads_per_core, int core_count_adjustment);
 
 	// Creates a pool with only the designated number of threads
+	// NOTE: A pool with 0 threads may be created where tasks can be emitted by multiple threads but consumed
+	//    by just one. This model is particularly useful for things like updating textures in your graphics
+	//    thread, using data provided by async resource workers.
 	POOL_API static IThreadPool *Create(size_t thread_count);
 
 };

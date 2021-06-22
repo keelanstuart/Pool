@@ -1,5 +1,4 @@
 /*
-
 	Pool, a thread-pooled asynchronous job library
 
 	Copyright © 2009-2021, Keelan Stuart. All rights reserved.
@@ -24,7 +23,6 @@
 	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 */
 
 #if defined(_DEBUG)
@@ -49,7 +47,7 @@
 
 #include <malloc.h>
 #include <memory.h>
-#include <deque>
+#include <queue>
 #include <vector>
 #include <algorithm>
 #include <thread>
@@ -91,39 +89,42 @@ protected:
 		size_t *m_pActionRef;
 	};
 
-	typedef std::deque<STaskInfo> TTaskList;
+	typedef std::queue<STaskInfo> TTaskQueue;
 
-	TTaskList m_TaskList;
+	TTaskQueue m_TaskQueue;
 
 	std::mutex m_mutexTaskList;
 
 	bool GetNextTask(STaskInfo &task)
 	{
-		bool ret = false;
-
+		// lock the queue
 		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		if (!m_TaskList.empty())
+		// return a task if one is available
+		if (!m_TaskQueue.empty())
 		{
-			task = m_TaskList.front();
-			m_TaskList.pop_front();
-			ret = true;
+			task = m_TaskQueue.back();
+			m_TaskQueue.pop();
+			return true;
 		}
 
-		return ret;
+		return false;
 	}
 
 	void WorkerThreadProc()
 	{
 		while (true)
 		{
+			// wait until told to run or quit
 			DWORD waitret = WaitForMultipleObjects(TS_NUMSEMAPHORES, m_hSemaphores, false, INFINITE) - WAIT_OBJECT_0;
 			if (waitret == TS_QUIT)
 				break;
 
 			m_mutexTaskList.lock();
 
-			size_t initial_task_count = m_TaskList.size();
+			// get the number of tasks so we can run continuously until they're completed...
+			// then relinquish the CPU temporarily, even if new tasks have been submitted
+			size_t initial_task_count = m_TaskQueue.size();
 
 			m_mutexTaskList.unlock();
 
@@ -131,23 +132,27 @@ protected:
 			while (initial_task_count && GetNextTask(task))
 			{
 				TASK_RETURN ret;
+
+				// run the task as long as it keeps telling us to re-run
 				do
 				{
 					ret = task.m_Task(task.m_Param[0], task.m_Param[1], task.m_TaskNumber);
 				}
 				while (ret == TASK_RETURN::TR_RERUN);
 
+				// if we need to re-queue it, do that now
 				if (ret == TASK_RETURN::TR_REQUEUE)
 				{
 					m_mutexTaskList.lock();
 
-					m_TaskList.push_back(task);
+					m_TaskQueue.push(task);
 
 					m_mutexTaskList.unlock();
 
 					if (m_hSemaphores[TS_RUN])
 						ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
 				}
+				// otherwise, indicate that the action has completed
 				else if (task.m_pActionRef)
 				{
 					(*(task.m_pActionRef))--;
@@ -262,6 +267,7 @@ public:
 
 	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false)
 	{
+		// if blocking is desired, blockwait will be incremented by each STaskInfo
 		size_t blockwait = 0;
 
 		{
@@ -269,18 +275,20 @@ public:
 
 			for (size_t i = 0; i < numtimes; i++)
 			{
-				m_TaskList.push_back(STaskInfo(func, param0, param1, i, block ? &blockwait : NULL));
+				m_TaskQueue.push(STaskInfo(func, param0, param1, i, block ? &blockwait : nullptr));
 			}
 		}
 
+		// tell the threads to run tasks
 		if (m_hSemaphores[TS_RUN])
-			ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
+			ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), nullptr);
 
+		// if we wanted to block, then wait until all of the tasks have completed (ie., wait until blockwait is 0 again)
 		if (m_hThreads.size() && block)
 		{
 			while (blockwait)
 			{
-				Sleep(1);
+				Sleep(0);
 			}
 		}
 
@@ -291,9 +299,9 @@ public:
 	{
 		if (m_hThreads.size())
 		{
-			while (!m_TaskList.empty())
+			while (!m_TaskQueue.empty())
 			{
-				Sleep(1);
+				Sleep(0);
 			}
 		}
 		else
@@ -306,22 +314,24 @@ public:
 	{
 		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		m_TaskList.clear();
+		// clear the queue (there is no .clear() method, so this is the way)
+		m_TaskQueue = { };
 	}
 
 	virtual void Flush()
 	{
 		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		for (auto &it : m_TaskList)
+		while (!m_TaskQueue.empty())
 		{
-			it.m_Task(it.m_Param[0], it.m_Param[1], it.m_TaskNumber);
+			STaskInfo &t = m_TaskQueue.back();
+			t.m_Task(t.m_Param[0], t.m_Param[1], t.m_TaskNumber);
 
-			if (it.m_pActionRef)
-				it.m_pActionRef--;
+			if (t.m_pActionRef)
+				t.m_pActionRef--;
+
+			m_TaskQueue.pop();
 		}
-
-		m_TaskList.clear();
 	}
 };
 
