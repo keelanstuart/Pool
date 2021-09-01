@@ -324,7 +324,7 @@ public:
 
 		while (!m_TaskQueue.empty())
 		{
-			STaskInfo &t = m_TaskQueue.back();
+			STaskInfo &t = m_TaskQueue.front();
 			t.m_Task(t.m_Param[0], t.m_Param[1], t.m_TaskNumber);
 
 			if (t.m_pActionRef)
