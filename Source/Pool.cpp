@@ -1,7 +1,7 @@
 /*
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2021, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2022, Keelan Stuart. All rights reserved.
 
 	MIT License
 
@@ -31,7 +31,7 @@
 #include <crtdbg.h>
 #endif
 
-#if defined(_MSC_BUILD)
+#if defined(_WIN32)
 
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
 
@@ -39,7 +39,7 @@
 #include <synchapi.h>
 #define sem_t HANDLE
 
-#elif defined(LINUX)
+#elif defined(__linux__)
 
 #include <semaphore.h>
 
@@ -196,10 +196,10 @@ public:
 			m_hThreads.resize(thread_count);
 
 			// create the run and quit semaphore...
-#if defined(_MSC_BUILD)
+#if defined(_WIN32)
 			m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
 			m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-#elif defined(LINUX)
+#elif defined(__linux__)
 			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
 			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
 #endif
@@ -232,9 +232,9 @@ public:
 		{
 			PurgeAllPendingTasks();
 
-#if defined(_MSC_BUILD)
+#if defined(_WIN32)
 			ReleaseSemaphore(m_hSemaphores[TS_QUIT], (LONG)m_hThreads.size(), NULL);
-#elif defined(LINUX)
+#elif defined(__linux__)
 #endif
 
 			for (size_t i = 0; i < m_hThreads.size(); i++)
@@ -242,10 +242,10 @@ public:
 				m_hThreads[i].join();
 			}
 
-#if defined(_MSC_BUILD)
+#if defined(_WIN32)
 			CloseHandle(m_hSemaphores[TS_QUIT]);
 			CloseHandle(m_hSemaphores[TS_RUN]);
-#elif defined(LINUX)
+#elif defined(__linux__)
 			sem_destroy(&m_hSemaphores[TS_QUIT]);
 			sem_destroy(&m_hSemaphores[TS_RUN]);
 #endif

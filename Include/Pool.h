@@ -2,7 +2,7 @@
 
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2021, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2022, Keelan Stuart. All rights reserved.
 
 	Pool is free software; you can redistribute it and/or modify it under
 	the terms of the MIT License:
