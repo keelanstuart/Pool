@@ -33,8 +33,6 @@
 
 #if defined(_WIN32)
 
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-
 #include <windows.h>
 #include <synchapi.h>
 #define sem_t HANDLE
@@ -62,11 +60,10 @@ class CThreadPool : public IThreadPool
 
 protected:
 
-	struct STaskInfo
+	__declspec(align(32)) struct STaskInfo
 	{
-		STaskInfo(TASK_CALLBACK task, void *param0, void *param1, size_t task_number, size_t *pactionref) :
-			m_Task(task),
-			m_pActionRef(pactionref)
+		STaskInfo(TASK_CALLBACK task, void *param0, void *param1, size_t task_number, volatile LONG *pactionref) :
+			m_pActionRef(pactionref), m_Task(task)
 		{
 			m_Param[0] = param0;
 			m_Param[1] = param1;
@@ -74,9 +71,12 @@ protected:
 
 			if (m_pActionRef)
 			{
-				(*m_pActionRef)++;
+				InterlockedIncrement(m_pActionRef);
 			}
 		}
+
+		// This is the number of active tasks, used for blocking
+		volatile LONG *m_pActionRef;
 
 		// The function that the thread should be running
 		TASK_CALLBACK m_Task;
@@ -84,9 +84,6 @@ protected:
 		// The parameter given to the thread function
 		void *m_Param[2];
 		size_t m_TaskNumber;
-
-		// This is the number of active tasks, used for blocking
-		size_t *m_pActionRef;
 	};
 
 	typedef std::queue<STaskInfo> TTaskQueue;
@@ -103,7 +100,7 @@ protected:
 		// return a task if one is available
 		if (!m_TaskQueue.empty())
 		{
-			task = m_TaskQueue.back();
+			task = m_TaskQueue.front();
 			m_TaskQueue.pop();
 			return true;
 		}
@@ -120,17 +117,12 @@ protected:
 			if (waitret == TS_QUIT)
 				break;
 
-			m_mutexTaskList.lock();
-
-			// get the number of tasks so we can run continuously until they're completed...
-			// then relinquish the CPU temporarily, even if new tasks have been submitted
-			size_t initial_task_count = m_TaskQueue.size();
-
-			m_mutexTaskList.unlock();
-
 			STaskInfo task(nullptr, nullptr, nullptr, 0, nullptr);
-			while (initial_task_count && GetNextTask(task))
+			while (true)
 			{
+				if (!GetNextTask(task))
+					break;
+
 				TASK_RETURN ret;
 
 				// run the task as long as it keeps telling us to re-run
@@ -155,10 +147,8 @@ protected:
 				// otherwise, indicate that the action has completed
 				else if (task.m_pActionRef)
 				{
-					(*(task.m_pActionRef))--;
+					InterlockedDecrement(task.m_pActionRef);
 				}
-
-				initial_task_count--;
 
 				Sleep(0);
 			}
@@ -268,7 +258,7 @@ public:
 	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false)
 	{
 		// if blocking is desired, blockwait will be incremented by each STaskInfo
-		size_t blockwait = 0;
+		volatile LONG blockwait = 0;
 
 		{
 			std::lock_guard<std::mutex> l(m_mutexTaskList);
@@ -288,7 +278,7 @@ public:
 		{
 			while (blockwait)
 			{
-				Sleep(0);
+				Sleep(10);
 			}
 		}
 
@@ -328,7 +318,9 @@ public:
 			t.m_Task(t.m_Param[0], t.m_Param[1], t.m_TaskNumber);
 
 			if (t.m_pActionRef)
-				t.m_pActionRef--;
+			{
+				InterlockedDecrement(t.m_pActionRef);
+			}
 
 			m_TaskQueue.pop();
 		}
