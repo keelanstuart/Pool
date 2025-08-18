@@ -1,7 +1,7 @@
 /*
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2022, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2025, Keelan Stuart. All rights reserved.
 
 	MIT License
 
@@ -60,13 +60,11 @@ class CThreadPool : public IThreadPool
 
 protected:
 
-	__declspec(align(32)) struct STaskInfo
+	__declspec(align(64)) struct STaskInfo
 	{
-		STaskInfo(TASK_CALLBACK task, void *param0, void *param1, size_t task_number, volatile LONG *pactionref) :
+		STaskInfo(PoolFunc task, size_t task_number, volatile LONG *pactionref) :
 			m_pActionRef(pactionref), m_Task(task)
 		{
-			m_Param[0] = param0;
-			m_Param[1] = param1;
 			m_TaskNumber = task_number;
 
 			if (m_pActionRef)
@@ -79,10 +77,9 @@ protected:
 		volatile LONG *m_pActionRef;
 
 		// The function that the thread should be running
-		TASK_CALLBACK m_Task;
+		PoolFunc m_Task;
 
 		// The parameter given to the thread function
-		void *m_Param[2];
 		size_t m_TaskNumber;
 	};
 
@@ -117,7 +114,7 @@ protected:
 			if (waitret == TS_QUIT)
 				break;
 
-			STaskInfo task(nullptr, nullptr, nullptr, 0, nullptr);
+			STaskInfo task(nullptr, 0, nullptr);
 			while (true)
 			{
 				if (!GetNextTask(task))
@@ -128,7 +125,7 @@ protected:
 				// run the task as long as it keeps telling us to re-run
 				do
 				{
-					ret = task.m_Task(task.m_Param[0], task.m_Param[1], task.m_TaskNumber);
+					ret = task.m_Task(task.m_TaskNumber);
 				}
 				while (ret == TASK_RETURN::TR_RERUN);
 
@@ -255,7 +252,7 @@ public:
 		return (UINT)m_hThreads.size();
 	}
 
-	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false)
+	virtual bool RunTask(PoolFunc func, size_t numtimes = 1, bool block = false)
 	{
 		// if blocking is desired, blockwait will be incremented by each STaskInfo
 		volatile LONG blockwait = 0;
@@ -265,7 +262,7 @@ public:
 
 			for (size_t i = 0; i < numtimes; i++)
 			{
-				m_TaskQueue.push(STaskInfo(func, param0, param1, i, block ? &blockwait : nullptr));
+				m_TaskQueue.push(STaskInfo(func, i, block ? &blockwait : nullptr));
 			}
 		}
 
@@ -315,7 +312,7 @@ public:
 		while (!m_TaskQueue.empty())
 		{
 			STaskInfo &t = m_TaskQueue.front();
-			t.m_Task(t.m_Param[0], t.m_Param[1], t.m_TaskNumber);
+			t.m_Task(t.m_TaskNumber);
 
 			if (t.m_pActionRef)
 			{

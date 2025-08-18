@@ -2,7 +2,7 @@
 
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2022, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2025, Keelan Stuart. All rights reserved.
 
 	Pool is free software; you can redistribute it and/or modify it under
 	the terms of the MIT License:
@@ -47,6 +47,7 @@
 
 
 #include <stdint.h>
+#include <functional>
 
 
 namespace pool
@@ -67,7 +68,7 @@ public:
 	// param0 and param1 are user-supplied values
 	// task_number is, for tasks started by RunTask where numtimes > 1, correspondent to the number of times
 	// the task has previously been run in this go.
-	typedef TASK_RETURN (__cdecl *TASK_CALLBACK)(void *param0, void *param1, size_t task_number);
+	using PoolFunc = std::function<TASK_RETURN(size_t task_number)>;
 
 	// Deletes the underlying thread pool and frees any resources associated with it
 	virtual void Release() = NULL;
@@ -77,7 +78,7 @@ public:
 
 	// Runs a task in the background, once or multiple times, optionally blocking.
 	// For example, if one wished to run 1000 identical tasks
-	virtual bool RunTask(TASK_CALLBACK func, void *param0 = nullptr, void *param1 = nullptr, size_t numtimes = 1, bool block = false) = NULL;
+	virtual bool RunTask(PoolFunc func, size_t numtimes = 1, bool block = false) = NULL;
 
 	// Waits for all active tasks to complete, until milliseconds expires... or INFINITE to wait forever
 	// NOTE: new task submission is still allowed during this function, so refrain from running new tasks to return
