@@ -1,7 +1,7 @@
 /*
 	Pool, a thread-pooled asynchronous job library
 
-	Copyright © 2009-2025, Keelan Stuart. All rights reserved.
+	Copyright © 2009-2026, Keelan Stuart. All rights reserved.
 
 	MIT License
 
