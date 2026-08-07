@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(Pool LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 option(POOL_BUILD_SHARED "Build Pool as a shared library" ON)
 option(POOL_BUILD_STATIC "Build Pool as a static library" ON)
 
@@ -42,7 +46,7 @@ function(configure_pool_target target static_library)
 
   target_compile_features(${target}
     PUBLIC
-      cxx_std_17
+      cxx_std_20
   )
 
   if(static_library)

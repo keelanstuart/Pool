@@ -37,6 +37,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <limits>
 
 using namespace pool;
 
@@ -44,9 +45,9 @@ using namespace pool;
 class ThreadPool : public IThreadPool
 {
 
-	__declspec(align(64)) struct Task
+	struct Task
 	{
-		Task(pool::IThreadPool::PoolFunc func, size_t task_number, volatile std::atomic<size_t> *pactionref) :
+		Task(pool::IThreadPool::PoolFunc func, size_t task_number, std::atomic<size_t> *pactionref) :
 			m_pActionRef(pactionref), m_Func(func)
 		{
 			m_TaskNumber = task_number;
@@ -56,7 +57,7 @@ class ThreadPool : public IThreadPool
 		}
 
 		// This is the number of active tasks, used for blocking
-		volatile std::atomic<size_t> *m_pActionRef;
+		std::atomic<size_t> *m_pActionRef;
 
 		// The function that the thread should be running
 		pool::IThreadPool::PoolFunc m_Func;
@@ -191,7 +192,10 @@ public:
 		for (auto &task : m_Tasks)
 		{
 			if (task.m_pActionRef)
+			{
 				(*(task.m_pActionRef))--;
+				task.m_pActionRef->notify_all();
+			}
 		}
 
 		m_Tasks.clear();
@@ -206,7 +210,6 @@ public:
 		while (true)
         {
 			std::unique_lock<std::mutex> lock(m_Mutex);
-			lock.lock();
 			
 			if (m_Tasks.empty())
 				break;
@@ -253,7 +256,10 @@ private:
 		}
 
 		if (task.m_pActionRef)
+		{
 			(*(task.m_pActionRef))--;
+			task.m_pActionRef->notify_all();
+		}
 	}
 
 
@@ -276,6 +282,9 @@ private:
 			lock.unlock();
 
 			Execute(task);
+
+			if (m_Tasks.empty())
+				m_IdleCondition.notify_all();
 		}
     }
 
@@ -285,7 +294,6 @@ private:
     std::mutex m_Mutex;
     std::condition_variable m_WorkCondition;
     std::condition_variable m_IdleCondition;
-    size_t m_Active = 0;
     bool m_Stopping = false;
 };
 

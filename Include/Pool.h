@@ -82,26 +82,26 @@ namespace pool
 		using PoolFunc = std::function<TaskReturn(size_t task_number)>;
 
 		// Deletes the underlying thread pool and frees any resources associated with it
-		virtual void Release() = NULL;
+		virtual void Release() = 0;
 
 		// Returns the number of worker threads in the pool
-		virtual size_t GetNumThreads() = NULL;
+		virtual size_t GetNumThreads() = 0;
 
 		// Runs a task in the background, once or multiple times, optionally blocking.
 		// For example, if one wished to run 1000 identical tasks
-		virtual bool RunTask(PoolFunc func, size_t numtimes = 1, bool block = false) = NULL;
+		virtual bool RunTask(PoolFunc func, size_t numtimes = 1, bool block = false) = 0;
 
 		#define WAIT_FOREVER	-1
 
 		// Waits for all active tasks to complete, until milliseconds expires... or INFINITE to wait forever
 		// NOTE: new task submission is still allowed during this function, so refrain from running new tasks to return
-		virtual void WaitForAllTasks(uint32_t milliseconds = WAIT_FOREVER) = NULL;
+		virtual void WaitForAllTasks(uint32_t milliseconds = WAIT_FOREVER) = 0;
 
 		// Removes any tasks not already running from the queue
-		virtual void PurgeAllPendingTasks() = NULL;
+		virtual void PurgeAllPendingTasks() = 0;
 
 		// Executes all tasks immediately on the calling thread, ideal for task queues as opposed to thread pools (use this mode with 0 threads)
-		virtual void Flush() = NULL;
+		virtual void Flush() = 0;
 
 		POOL_API static IThreadPool* Create(size_t threads_per_core, int core_count_adjustment);
 		POOL_API static IThreadPool* Create(size_t thread_count);
