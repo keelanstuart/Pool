@@ -25,314 +25,278 @@
 	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#if defined(_DEBUG)
-#define _CRTDBG_MAP_ALLOC
-#include <stdlib.h>
-#include <crtdbg.h>
-#endif
-
-#if defined(_WIN32)
-
-#include <windows.h>
-#include <synchapi.h>
-#define sem_t HANDLE
-
-#elif defined(__linux__)
-
-#include <semaphore.h>
-
-#endif
-
-#include <malloc.h>
-#include <memory.h>
-#include <queue>
-#include <vector>
-#include <algorithm>
-#include <thread>
-#include <mutex>
-
 #include <Pool.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <utility>
+#include <vector>
 
 using namespace pool;
 
-class CThreadPool : public IThreadPool
+
+class ThreadPool : public IThreadPool
 {
 
-protected:
-
-	__declspec(align(64)) struct STaskInfo
+	__declspec(align(64)) struct Task
 	{
-		STaskInfo(PoolFunc task, size_t task_number, volatile LONG *pactionref) :
-			m_pActionRef(pactionref), m_Task(task)
+		Task(pool::IThreadPool::PoolFunc func, size_t task_number, volatile std::atomic<size_t> *pactionref) :
+			m_pActionRef(pactionref), m_Func(func)
 		{
 			m_TaskNumber = task_number;
 
 			if (m_pActionRef)
-			{
-				InterlockedIncrement(m_pActionRef);
-			}
+				(*m_pActionRef)++;
 		}
 
 		// This is the number of active tasks, used for blocking
-		volatile LONG *m_pActionRef;
+		volatile std::atomic<size_t> *m_pActionRef;
 
 		// The function that the thread should be running
-		PoolFunc m_Task;
+		pool::IThreadPool::PoolFunc m_Func;
 
 		// The parameter given to the thread function
 		size_t m_TaskNumber;
 	};
 
-	typedef std::queue<STaskInfo> TTaskQueue;
-
-	TTaskQueue m_TaskQueue;
-
-	std::mutex m_mutexTaskList;
-
-	bool GetNextTask(STaskInfo &task)
-	{
-		// lock the queue
-		std::lock_guard<std::mutex> l(m_mutexTaskList);
-
-		// return a task if one is available
-		if (!m_TaskQueue.empty())
-		{
-			task = m_TaskQueue.front();
-			m_TaskQueue.pop();
-			return true;
-		}
-
-		return false;
-	}
-
-	void WorkerThreadProc()
-	{
-		while (true)
-		{
-			// wait until told to run or quit
-			DWORD waitret = WaitForMultipleObjects(TS_NUMSEMAPHORES, m_hSemaphores, false, INFINITE) - WAIT_OBJECT_0;
-			if (waitret == TS_QUIT)
-				break;
-
-			STaskInfo task(nullptr, 0, nullptr);
-			while (true)
-			{
-				if (!GetNextTask(task))
-					break;
-
-				TASK_RETURN ret;
-
-				// run the task as long as it keeps telling us to re-run
-				do
-				{
-					ret = task.m_Task(task.m_TaskNumber);
-				}
-				while (ret == TASK_RETURN::TR_RERUN);
-
-				// if we need to re-queue it, do that now
-				if (ret == TASK_RETURN::TR_REQUEUE)
-				{
-					m_mutexTaskList.lock();
-
-					m_TaskQueue.push(task);
-
-					m_mutexTaskList.unlock();
-
-					if (m_hSemaphores[TS_RUN])
-						ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), NULL);
-				}
-				// otherwise, indicate that the action has completed
-				else if (task.m_pActionRef)
-				{
-					InterlockedDecrement(task.m_pActionRef);
-				}
-
-				Sleep(0);
-			}
-		}
-	}
-
-	static void _WorkerThreadProc(CThreadPool *param)
-	{
-		CThreadPool *_this = (CThreadPool *)param;
-		_this->WorkerThreadProc();
-	}
-
-	// the actual thread handles... keep them separated from SThreadInfo
-	// so we can wait on them.
-	std::vector<std::thread> m_hThreads;
-
-	enum
-	{
-		TS_QUIT = 0,		// indicates it's time for a thread to shut down
-		TS_RUN,				// indicates that the thread should start running the function given
-
-		TS_NUMSEMAPHORES
-	};
-
-	sem_t m_hSemaphores[TS_NUMSEMAPHORES];
-
 public:
 
-	void Initialize(size_t thread_count)
+	explicit ThreadPool(size_t thread_count)
+    {
+        m_Workers.reserve(thread_count);
+
+		for (size_t i = 0; i < thread_count; ++i)
+            m_Workers.emplace_back([this]() { WorkerLoop(); });
+    }
+
+
+    ThreadPool(size_t threads_per_core, int core_count_adjustment)
+        : ThreadPool(CalculateThreadCount(threads_per_core, core_count_adjustment))
+    {
+    }
+
+
+    virtual ~ThreadPool()
 	{
-		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
+		m_Stopping = true;
+		PurgeAllPendingTasks();
+		WaitForAllTasks();
 
-		if (thread_count)
-		{
-			m_hThreads.resize(thread_count);
+		m_WorkCondition.notify_all();
+        
+		for (auto& worker : m_Workers)
+            if (worker.joinable())
+				worker.join();
+    }
 
-			// create the run and quit semaphore...
-#if defined(_WIN32)
-			m_hSemaphores[TS_QUIT] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-			m_hSemaphores[TS_RUN] = CreateSemaphore(NULL, 0, (LONG)m_hThreads.size(), NULL);
-#elif defined(__linux__)
-			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
-			sem_init(&m_hSemaphores[TS_QUIT], 0, m_hThreads.size());
-#endif
 
-			for (size_t i = 0; i < m_hThreads.size(); i++)
-			{
-				m_hThreads[i] = std::thread(_WorkerThreadProc, this);
-			}
-		}
-	}
-
-	CThreadPool(size_t threads_per_core, int core_count_adjustment)
-	{
-		// Find out how many cores the system has
-		SYSTEM_INFO sysinfo;
-		GetSystemInfo(&sysinfo);
-
-		// Calculate the number of threads we need and allocate thread handles
-		Initialize(threads_per_core * (size_t)std::max<int>(1, (sysinfo.dwNumberOfProcessors + core_count_adjustment)));
-	}
-
-	CThreadPool(size_t thread_count)
-	{
-		Initialize(thread_count);
-	}
-
-	virtual ~CThreadPool()
-	{
-		if (m_hThreads.size())
-		{
-			PurgeAllPendingTasks();
-
-#if defined(_WIN32)
-			ReleaseSemaphore(m_hSemaphores[TS_QUIT], (LONG)m_hThreads.size(), NULL);
-#elif defined(__linux__)
-#endif
-
-			for (size_t i = 0; i < m_hThreads.size(); i++)
-			{
-				m_hThreads[i].join();
-			}
-
-#if defined(_WIN32)
-			CloseHandle(m_hSemaphores[TS_QUIT]);
-			CloseHandle(m_hSemaphores[TS_RUN]);
-#elif defined(__linux__)
-			sem_destroy(&m_hSemaphores[TS_QUIT]);
-			sem_destroy(&m_hSemaphores[TS_RUN]);
-#endif
-		}
-
-		memset(m_hSemaphores, 0, sizeof(HANDLE) * TS_NUMSEMAPHORES);
-	}
-
-	virtual void Release()
+    void Release()
 	{
 		delete this;
 	}
 
-	// the number of worker threads in the pool
-	virtual size_t GetNumThreads()
+
+	size_t GetNumThreads()
 	{
-		return (UINT)m_hThreads.size();
+		return m_Workers.size();
 	}
 
-	virtual bool RunTask(PoolFunc func, size_t numtimes = 1, bool block = false)
-	{
-		// if blocking is desired, blockwait will be incremented by each STaskInfo
-		volatile LONG blockwait = 0;
+
+	bool RunTask(PoolFunc func, size_t numtimes, bool block) override
+    {
+		// this should probably just assert......
+        if (!func || numtimes == 0)
+			return false;
+
+		if (m_Stopping)
+			return false;
+
+		// when we're blocking, we have an atomic counter...
+		// Task will auto-increment the count during construction.
+		// Execute (and Purge) will decrement it.
+		std::atomic<size_t> block_count = 0;
+		std::atomic<size_t> *pbc = block ? &block_count : nullptr;
 
 		{
-			std::lock_guard<std::mutex> l(m_mutexTaskList);
+            std::lock_guard<std::mutex> lock(m_Mutex);
 
 			for (size_t i = 0; i < numtimes; i++)
-			{
-				m_TaskQueue.push(STaskInfo(func, i, block ? &blockwait : nullptr));
-			}
-		}
+                m_Tasks.push_back(Task{func, i, pbc});
+        }
 
-		// tell the threads to run tasks
-		if (m_hSemaphores[TS_RUN])
-			ReleaseSemaphore(m_hSemaphores[TS_RUN], (LONG)m_hThreads.size(), nullptr);
+		m_WorkCondition.notify_all();
 
-		// if we wanted to block, then wait until all of the tasks have completed (ie., wait until blockwait is 0 again)
-		if (m_hThreads.size() && block)
-		{
-			while (blockwait)
+		// Sometimes, you may have no workers (it's just a work queue), as you might
+		// with a graphics rendering system where there is a drawing thread.
+		// This handles that case.
+        if (m_Workers.empty())
+        {
+            if (block)
+				Flush();
+        }
+        else if (block)
+        {
+			// get the inital count we're waiting for...
+			size_t cur_count = block_count.load();
+
+			while (cur_count)
 			{
-				Sleep(10);
+				// atomic::wait will wait for the value to change...
+				block_count.wait(cur_count);
+
+				// ...so after any change, we get the new value and wait for
+				// that to change.
+				cur_count = block_count.load();
 			}
-		}
+        }
 
 		return true;
+    }
+
+
+    void WaitForAllTasks(uint32_t milliseconds = WAIT_FOREVER)
+    {
+        if (m_Workers.empty())
+        {
+            Flush();
+            return;
+        }
+
+        std::unique_lock<std::mutex> lock(m_Mutex);
+
+		auto done = [&]()
+		{
+			return m_Tasks.empty();
+		};
+
+		if (milliseconds == std::numeric_limits<uint32_t>::max())
+            m_IdleCondition.wait(lock, done);
+        else
+            m_IdleCondition.wait_for(lock, std::chrono::milliseconds(milliseconds), done);
+    }
+
+
+	void PurgeAllPendingTasks()
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+
+		// make sure that any tasks still waiting to be run that might be blocking
+		// have that reference decremented - otherwise, 
+		for (auto &task : m_Tasks)
+		{
+			if (task.m_pActionRef)
+				(*(task.m_pActionRef))--;
+		}
+
+		m_Tasks.clear();
+    }
+
+
+	void Flush()
+    {
+		if (!m_Workers.empty())
+			return;
+
+		while (true)
+        {
+			std::unique_lock<std::mutex> lock(m_Mutex);
+			lock.lock();
+			
+			if (m_Tasks.empty())
+				break;
+			
+			Task task = std::move(m_Tasks.front());
+			m_Tasks.pop_front();
+			lock.unlock();
+
+			Execute(task);
+        }
+    }
+
+
+private:
+
+	static size_t CalculateThreadCount(size_t per_core, int adjustment)
+	{
+		int cores = std::max<int>(1, std::thread::hardware_concurrency());
+
+		return per_core * std::max<int>(1, cores + adjustment);
 	}
 
-	virtual void WaitForAllTasks(uint32_t milliseconds)
+
+	void Execute(Task &task)
 	{
-		if (m_hThreads.size())
+		TaskReturn result;
+
+		do
 		{
-			while (!m_TaskQueue.empty())
+			result = task.m_Func(task.m_TaskNumber);
+		}
+		while ((result == TaskReturn::RERUN) && !m_Stopping);
+
+		if (result == TaskReturn::REQUEUE)
+		{
+			std::lock_guard<std::mutex> lock(m_Mutex);
+
+			if (!m_Stopping)
 			{
-				Sleep(0);
+				m_Tasks.push_back(std::move(task));
+				m_WorkCondition.notify_one();
+				return;
 			}
 		}
-		else
-		{
-			Flush();
-		}
+
+		if (task.m_pActionRef)
+			(*(task.m_pActionRef))--;
 	}
 
-	virtual void PurgeAllPendingTasks()
-	{
-		std::lock_guard<std::mutex> l(m_mutexTaskList);
 
-		// clear the queue (there is no .clear() method, so this is the way)
-		m_TaskQueue = { };
-	}
-
-	virtual void Flush()
-	{
-		std::lock_guard<std::mutex> l(m_mutexTaskList);
-
-		while (!m_TaskQueue.empty())
+	void WorkerLoop()
+    {
+		while (true)
 		{
-			STaskInfo &t = m_TaskQueue.front();
-			t.m_Task(t.m_TaskNumber);
-
-			if (t.m_pActionRef)
+			std::unique_lock<std::mutex> lock(m_Mutex);
+			
+			m_WorkCondition.wait(lock, [&]()
 			{
-				InterlockedDecrement(t.m_pActionRef);
-			}
+				return m_Stopping || !m_Tasks.empty();
+			});
+			
+			if (m_Stopping)
+				return;
+			
+			Task task = std::move(m_Tasks.front());
+			m_Tasks.pop_front();
+			lock.unlock();
 
-			m_TaskQueue.pop();
+			Execute(task);
 		}
-	}
+    }
+
+
+    std::deque<Task> m_Tasks;
+    std::vector<std::thread> m_Workers;
+    std::mutex m_Mutex;
+    std::condition_variable m_WorkCondition;
+    std::condition_variable m_IdleCondition;
+    size_t m_Active = 0;
+    bool m_Stopping = false;
 };
 
-// Creates a pool with the number of threads based on the cores in the machine, given by:
-//   threads_per_core * max(1, (core_count + core_count_adjustment))
-IThreadPool *IThreadPool::Create(size_t threads_per_core, int core_count_adjustment)
+
+pool::IThreadPool* pool::IThreadPool::Create(size_t threads_per_core, int core_count_adjustment)
 {
-	return new CThreadPool(threads_per_core, core_count_adjustment);
+    return new ThreadPool(threads_per_core, core_count_adjustment);
 }
 
-// Creates a pool with only the designated number of threads
-IThreadPool *IThreadPool::Create(size_t thread_count)
+
+pool::IThreadPool* pool::IThreadPool::Create(size_t thread_count)
 {
-	return new CThreadPool(thread_count);
+    return new ThreadPool(thread_count);
 }

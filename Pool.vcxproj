@@ -242,7 +242,7 @@
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
       <SDLCheck>false</SDLCheck>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -275,6 +275,7 @@
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
       <SDLCheck>false</SDLCheck>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -307,7 +308,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -339,7 +340,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -371,6 +372,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -449,6 +451,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
@@ -562,6 +565,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <XMLDocumentationFileName>
       </XMLDocumentationFileName>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>

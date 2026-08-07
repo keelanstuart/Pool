@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Debug Static" />
+    <BuildType Name="Release" />
+    <BuildType Name="Release Profile" />
+    <BuildType Name="Release Static" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Pool.vcxproj" Id="65a60f8b-6615-4b8f-879a-4e950756e7fd" />
+</Solution>
