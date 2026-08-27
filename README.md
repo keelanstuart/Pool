@@ -24,6 +24,7 @@ Sometimes you simply want to say:
 thread_pool->RunTask([](size_t task_number)
 {
     DoSomething();
+
     return pool::IThreadPool::OK;
 });
 ```
