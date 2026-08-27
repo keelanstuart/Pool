@@ -21,12 +21,11 @@ Using one shouldn't be, either.
 Sometimes you simply want to say:
 
 ```cpp
-thread_pool->RunTask(
-    [](size_t task_number)
-    {
-        DoSomething();
-        return pool::IThreadPool::OK;
-    });
+thread_pool->RunTask([](size_t task_number)
+{
+    DoSomething();
+    return pool::IThreadPool::OK;
+});
 ```
 
 and get on with the rest of your program.
@@ -54,22 +53,19 @@ Creating a Pool returns an `IThreadPool` interface.
 Create two worker threads per CPU core:
 
 ```cpp
-pool::IThreadPool* thread_pool =
-    pool::IThreadPool::Create(2, 0);
+pool::IThreadPool* thread_pool = pool::IThreadPool::Create(2, 0);
 ```
 
 Create one worker per CPU core, but reduce the core count used in the calculation by three:
 
 ```cpp
-pool::IThreadPool* thread_pool =
-    pool::IThreadPool::Create(1, -3);
+pool::IThreadPool* thread_pool = pool::IThreadPool::Create(1, -3);
 ```
 
 Or create an exact number of worker threads:
 
 ```cpp
-pool::IThreadPool* thread_pool =
-    pool::IThreadPool::Create(3);
+pool::IThreadPool* thread_pool = pool::IThreadPool::Create(3);
 ```
 
 That creates exactly three workers.
@@ -89,13 +85,12 @@ That means lambdas can capture whatever state they need directly:
 ```cpp
 int value = 42;
 
-thread_pool->RunTask(
-    [value](size_t task_number)
-    {
-        Process(value);
+thread_pool->RunTask([value](size_t task_number)
+{
+    Process(value);
 
-        return pool::IThreadPool::OK;
-    });
+    return pool::IThreadPool::OK;
+});
 ```
 
 There is no separate user-data pointer or callback context to manage.
@@ -103,21 +98,17 @@ There is no separate user-data pointer or callback context to manage.
 Multiple kinds of work can be submitted to the same pool:
 
 ```cpp
-thread_pool->RunTask(
-    [](size_t task_number)
-    {
-        ProcessSomething();
-        return pool::IThreadPool::OK;
-    },
-    100);
+thread_pool->RunTask([](size_t task_number)
+{
+    ProcessSomething();
+    return pool::IThreadPool::OK;
+}, 100);
 
-thread_pool->RunTask(
-    [](size_t task_number)
-    {
-        ProcessSomethingElse();
-        return pool::IThreadPool::OK;
-    },
-    10);
+thread_pool->RunTask([](size_t task_number)
+{
+    ProcessSomethingElse();
+    return pool::IThreadPool::OK;
+}, 10);
 ```
 
 The calling thread continues while Pool works through the queue.
@@ -133,15 +124,12 @@ It's having **one operation that needs to happen many times**.
 For example:
 
 ```cpp
-thread_pool->RunTask(
-    [](size_t task_number)
-    {
-        Process(task_number);
+thread_pool->RunTask([](size_t task_number)
+{
+    Process(task_number);
 
-        return pool::IThreadPool::OK;
-    },
-    1000,
-    true);
+    return pool::IThreadPool::OK;
+}, 1000, true);
 ```
 
 This submits the same task 1,000 times.
@@ -153,14 +141,12 @@ The final `true` requests blocking behavior, so `RunTask()` does not return unti
 The same operation without blocking is simply:
 
 ```cpp
-thread_pool->RunTask(
-    [](size_t task_number)
-    {
-        Process(task_number);
+thread_pool->RunTask([](size_t task_number)
+{
+    Process(task_number);
 
-        return pool::IThreadPool::OK;
-    },
-    1000);
+    return pool::IThreadPool::OK;
+}, 1000);
 ```
 
 ---
@@ -265,8 +251,7 @@ Yes.
 And it's useful.
 
 ```cpp
-pool::IThreadPool* deferred_tasks =
-    pool::IThreadPool::Create(0);
+pool::IThreadPool* deferred_tasks = pool::IThreadPool::Create(0);
 ```
 
 A Pool with zero worker threads still accepts tasks normally.
@@ -302,13 +287,12 @@ One common example is graphics programming.
 Background threads can load, decode, or prepare resources and then submit only the work that must execute on the render thread:
 
 ```cpp
-graphics_tasks->RunTask(
-    [texture](size_t task_number)
-    {
-        UploadTextureToGPU(texture);
+graphics_tasks->RunTask([texture](size_t task_number)
+{
+    UploadTextureToGPU(texture);
 
-        return pool::IThreadPool::OK;
-    });
+    return pool::IThreadPool::OK;
+});
 ```
 
 The producer thread does not need access to the graphics context.
@@ -350,30 +334,23 @@ Because tasks are `std::function` objects, task-specific state can be captured n
 ```cpp
 Mesh* mesh = LoadMesh();
 
-graphics_tasks->RunTask(
-    [mesh](size_t task_number)
-    {
-        mesh->UploadToGPU();
+graphics_tasks->RunTask([mesh](size_t task_number)
+{
+    mesh->UploadToGPU();
 
-        return pool::IThreadPool::OK;
-    });
+    return pool::IThreadPool::OK;
+});
 ```
 
 Or capture several values:
 
 ```cpp
-thread_pool->RunTask(
-    [source, destination, count](size_t task_number)
-    {
-        ProcessRange(
-            source,
-            destination,
-            count,
-            task_number);
+thread_pool->RunTask([source, destination, count](size_t task_number)
+{
+    ProcessRange(source, destination, count, task_number);
 
-        return pool::IThreadPool::OK;
-    },
-    worker_count);
+    return pool::IThreadPool::OK;
+}, worker_count);
 ```
 
 The application remains responsible for ensuring that captured references and pointers remain valid until the task has finished.
@@ -385,8 +362,7 @@ The application remains responsible for ensuring that captured references and po
 The number of worker threads can be queried at runtime:
 
 ```cpp
-size_t workers =
-    thread_pool->GetNumThreads();
+size_t workers = thread_pool->GetNumThreads();
 ```
 
 For a zero-thread task queue, this returns zero.
