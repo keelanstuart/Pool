@@ -47,6 +47,7 @@ class ThreadPool : public IThreadPool
 
 	struct Task
 	{
+		Task() { }
 		Task(pool::IThreadPool::PoolFunc func, size_t task_number, std::atomic<size_t> *pactionref) :
 			m_pActionRef(pactionref), m_Func(func)
 		{
@@ -209,14 +210,17 @@ public:
 
 		while (true)
         {
-			std::unique_lock<std::mutex> lock(m_Mutex);
+			Task task;
+
+			{
+		        std::lock_guard<std::mutex> lock(m_Mutex);
 			
-			if (m_Tasks.empty())
-				break;
+				if (m_Tasks.empty())
+					break;
 			
-			Task task = std::move(m_Tasks.front());
-			m_Tasks.pop_front();
-			lock.unlock();
+				Task task = std::move(m_Tasks.front());
+				m_Tasks.pop_front();
+			}
 
 			Execute(task);
         }
